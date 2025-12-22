@@ -8,9 +8,10 @@ import StatusCard from '@/components/attendance/StatusCard';
 import AttendanceButtons from '@/components/attendance/AttendanceButtons';
 import RecentHistory from '@/components/attendance/RecentHistory';
 import CameraCapture from '@/components/attendance/CameraCapture';
+import LocationMap from '@/components/attendance/LocationMap';
 import { getCurrentPosition, GeolocationError } from '@/lib/geolocation';
-import { Card, CardContent } from '@/components/ui/card';
-import { MapPin, RefreshCw } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { MapPin, RefreshCw, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface AttendanceRecord {
@@ -266,61 +267,82 @@ const Dashboard = () => {
             lastClockOut={lastClockOut ? new Date(lastClockOut.recorded_at) : null}
           />
 
-          {/* GPS Status (tanpa geofencing) */}
+          {/* GPS Status dengan Peta */}
           <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col gap-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`p-2 rounded-lg ${currentPosition ? 'bg-primary/10' : 'bg-muted'}`}
-                    >
-                      <MapPin
-                        className={`h-5 w-5 ${currentPosition ? 'text-primary' : 'text-muted-foreground'}`}
-                      />
-                    </div>
-                    <div>
-                      <p className="font-medium">
-                        {locationLoading
-                          ? 'Mendapatkan lokasi...'
-                          : locationError
-                          ? 'Lokasi Error'
-                          : currentPosition
-                          ? 'Lokasi Tersedia'
-                          : 'Lokasi Belum Tersedia'}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {locationError
-                          ? locationError
-                          : currentPosition
-                          ? `Akurasi: ${Math.round(currentPosition.accuracy)}m`
-                          : 'Klik tombol Update Lokasi untuk mendapatkan lokasi'}
-                      </p>
-                    </div>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MapPin className="h-5 w-5" />
+                Lokasi Anda
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Map */}
+              {currentPosition ? (
+                <LocationMap
+                  latitude={currentPosition.latitude}
+                  longitude={currentPosition.longitude}
+                  accuracy={currentPosition.accuracy}
+                />
+              ) : (
+                <div className="w-full h-48 rounded-lg border-2 border-dashed border-foreground/20 flex items-center justify-center bg-muted">
+                  <p className="text-muted-foreground text-sm">
+                    {locationLoading ? 'Mendapatkan lokasi...' : 'Lokasi belum tersedia'}
+                  </p>
+                </div>
+              )}
+
+              {/* Location Info */}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">
+                      {locationLoading
+                        ? 'Mendapatkan lokasi...'
+                        : locationError
+                        ? 'Lokasi Error'
+                        : currentPosition
+                        ? 'Lokasi Tersedia'
+                        : 'Lokasi Belum Tersedia'}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {locationError
+                        ? locationError
+                        : currentPosition
+                        ? `Akurasi: ±${Math.round(currentPosition.accuracy)}m`
+                        : 'Klik tombol Update Lokasi'}
+                    </p>
                   </div>
 
                   <Button
                     variant="outline"
                     onClick={refreshLocation}
                     disabled={locationLoading}
-                    className="border-2 border-foreground"
+                    className="border-2 border-foreground shrink-0"
                   >
                     <RefreshCw className={`h-4 w-4 mr-2 ${locationLoading ? 'animate-spin' : ''}`} />
-                    Update Lokasi
+                    Update
                   </Button>
                 </div>
 
                 {currentPosition && (
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border-2 border-foreground/20 bg-muted/40 p-3">
-                    <div className="text-sm">
-                      <p className="font-medium">Koordinat</p>
-                      <p className="text-muted-foreground">
-                        {currentPosition.latitude.toFixed(6)}, {currentPosition.longitude.toFixed(6)}
-                      </p>
-                    </div>
+                  <div className="flex flex-wrap gap-2">
                     <Button
-                      type="button"
                       variant="outline"
+                      size="sm"
+                      className="border-2 border-foreground"
+                      onClick={() => {
+                        window.open(
+                          `https://www.google.com/maps?q=${currentPosition.latitude},${currentPosition.longitude}`,
+                          '_blank'
+                        );
+                      }}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Buka di Google Maps
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       className="border-2 border-foreground"
                       onClick={async () => {
                         try {
@@ -334,7 +356,7 @@ const Dashboard = () => {
                         } catch {
                           toast({
                             title: 'Gagal',
-                            description: 'Tidak bisa menyalin koordinat di perangkat ini.',
+                            description: 'Tidak bisa menyalin koordinat.',
                             variant: 'destructive',
                           });
                         }
@@ -344,10 +366,6 @@ const Dashboard = () => {
                     </Button>
                   </div>
                 )}
-
-                <p className="text-xs text-muted-foreground">
-                  Catatan: Lokasi dipakai sebagai bukti absensi (disimpan bersama foto), bukan untuk membatasi area.
-                </p>
               </div>
             </CardContent>
           </Card>
