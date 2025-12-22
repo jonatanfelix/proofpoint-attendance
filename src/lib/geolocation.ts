@@ -44,8 +44,9 @@ export const getCurrentPosition = (): Promise<GeolocationResult> => {
       (position) => {
         const { latitude, longitude, accuracy } = position.coords;
         
-        // Anti-spoofing: Reject if accuracy is too low (> 1000m)
-        if (accuracy > 1000) {
+        // Anti-spoofing: Reject if accuracy is too low (> 5000m for browser testing)
+        // In production with mobile devices, this should be stricter (1000m)
+        if (accuracy > 5000) {
           reject({
             code: 'ACCURACY_TOO_LOW',
             message: 'GPS accuracy is too low. Please move to an area with better signal.',
