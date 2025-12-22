@@ -8,6 +8,7 @@ import StatusCard from '@/components/attendance/StatusCard';
 import LocationStatus from '@/components/attendance/LocationStatus';
 import AttendanceButtons from '@/components/attendance/AttendanceButtons';
 import RecentHistory from '@/components/attendance/RecentHistory';
+import CameraCapture from '@/components/attendance/CameraCapture';
 import { getCurrentPosition, calculateDistance, GeolocationError } from '@/lib/geolocation';
 
 interface Location {
@@ -25,6 +26,10 @@ interface AttendanceRecord {
   photo_url: string | null;
 }
 
+interface ProfileData {
+  full_name: string;
+}
+
 const Dashboard = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -40,6 +45,27 @@ const Dashboard = () => {
   const [nearestLocation, setNearestLocation] = useState<Location | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
   const [isWithinRange, setIsWithinRange] = useState<boolean | null>(null);
+
+  // Camera state
+  const [showCamera, setShowCamera] = useState(false);
+  const [pendingRecordType, setPendingRecordType] = useState<'clock_in' | 'clock_out' | null>(null);
+
+  // Fetch user profile for camera watermark
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error) return null;
+      return data as ProfileData;
+    },
+    enabled: !!user?.id,
+  });
 
   // Fetch locations
   const { data: locations } = useQuery({
@@ -150,9 +176,43 @@ const Dashboard = () => {
     }
   }, [locations, refreshLocation]);
 
+  // Upload photo to storage
+  const uploadPhoto = async (imageDataUrl: string, recordType: 'clock_in' | 'clock_out'): Promise<string | null> => {
+    try {
+      // Convert base64 to blob
+      const base64Data = imageDataUrl.split(',')[1];
+      const byteCharacters = atob(base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'image/jpeg' });
+
+      // Generate unique filename
+      const fileName = `${user?.id}/${Date.now()}_${recordType}.jpg`;
+
+      const { error } = await supabase.storage
+        .from('attendance-photos')
+        .upload(fileName, blob, { contentType: 'image/jpeg' });
+
+      if (error) throw error;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('attendance-photos')
+        .getPublicUrl(fileName);
+
+      return urlData.publicUrl;
+    } catch (err) {
+      console.error('Photo upload error:', err);
+      return null;
+    }
+  };
+
   // Clock in/out mutation
   const attendanceMutation = useMutation({
-    mutationFn: async (recordType: 'clock_in' | 'clock_out') => {
+    mutationFn: async ({ recordType, photoUrl }: { recordType: 'clock_in' | 'clock_out'; photoUrl: string | null }) => {
       if (!user?.id || !currentPosition) {
         throw new Error('Missing required data');
       }
@@ -165,11 +225,12 @@ const Dashboard = () => {
         longitude: currentPosition.longitude,
         accuracy_meters: currentPosition.accuracy,
         recorded_at: new Date().toISOString(),
+        photo_url: photoUrl,
       });
 
       if (error) throw error;
     },
-    onSuccess: (_, recordType) => {
+    onSuccess: (_, { recordType }) => {
       queryClient.invalidateQueries({ queryKey: ['attendance-records'] });
       toast({
         title: recordType === 'clock_in' ? 'Clocked In!' : 'Clocked Out!',
@@ -186,11 +247,29 @@ const Dashboard = () => {
   });
 
   const handleClockIn = () => {
-    attendanceMutation.mutate('clock_in');
+    setPendingRecordType('clock_in');
+    setShowCamera(true);
   };
 
   const handleClockOut = () => {
-    attendanceMutation.mutate('clock_out');
+    setPendingRecordType('clock_out');
+    setShowCamera(true);
+  };
+
+  const handleCameraCapture = async (imageDataUrl: string) => {
+    if (!pendingRecordType) return;
+
+    // Upload photo first
+    const photoUrl = await uploadPhoto(imageDataUrl, pendingRecordType);
+
+    // Submit attendance record
+    attendanceMutation.mutate({ recordType: pendingRecordType, photoUrl });
+    setPendingRecordType(null);
+  };
+
+  const handleCameraClose = () => {
+    setShowCamera(false);
+    setPendingRecordType(null);
   };
 
   const canClockIn = isWithinRange === true && status !== 'clocked_in';
@@ -236,6 +315,19 @@ const Dashboard = () => {
           />
         </div>
       </main>
+
+      {/* Camera Capture Modal */}
+      {currentPosition && (
+        <CameraCapture
+          isOpen={showCamera}
+          onClose={handleCameraClose}
+          onCapture={handleCameraCapture}
+          employeeName={profile?.full_name || user?.email || 'Employee'}
+          recordType={pendingRecordType === 'clock_in' ? 'CLOCK IN' : 'CLOCK OUT'}
+          latitude={currentPosition.latitude}
+          longitude={currentPosition.longitude}
+        />
+      )}
     </div>
   );
 };
