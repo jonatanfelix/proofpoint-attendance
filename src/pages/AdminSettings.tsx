@@ -9,10 +9,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getCurrentPosition } from '@/lib/geolocation';
-import { MapPin, Save, Building, Clock, Target, Loader2, Navigation } from 'lucide-react';
+import { 
+  MapPin, Save, Building, Clock, Target, Loader2, Navigation, 
+  Plus, Trash2, Edit, Check, X 
+} from 'lucide-react';
 import { toast } from 'sonner';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+
+interface Shift {
+  id: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+  is_active: boolean;
+}
 
 // Fix for default marker icon
 delete (L.Icon.Default.prototype as { _getIconUrl?: () => string })._getIconUrl;
@@ -51,6 +62,15 @@ const AdminSettings = () => {
   const radiusRef = useRef(radius);
   const circleRef = useRef<L.Circle | null>(null);
 
+  // Shift management state
+  const [newShiftName, setNewShiftName] = useState('');
+  const [newShiftStart, setNewShiftStart] = useState('08:00');
+  const [newShiftEnd, setNewShiftEnd] = useState('17:00');
+  const [editingShift, setEditingShift] = useState<Shift | null>(null);
+  const [editShiftName, setEditShiftName] = useState('');
+  const [editShiftStart, setEditShiftStart] = useState('');
+  const [editShiftEnd, setEditShiftEnd] = useState('');
+
   // Check if user is admin
   const { data: userRole, isLoading: roleLoading } = useQuery({
     queryKey: ['user-role', user?.id],
@@ -82,6 +102,21 @@ const AdminSettings = () => {
       
       if (error) throw error;
       return data as CompanySettings | null;
+    },
+    enabled: isAdminOrDeveloper,
+  });
+
+  // Fetch shifts
+  const { data: shifts, isLoading: shiftsLoading } = useQuery({
+    queryKey: ['shifts'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('shifts')
+        .select('*')
+        .order('name');
+      
+      if (error) throw error;
+      return data as Shift[];
     },
     enabled: isAdminOrDeveloper,
   });
@@ -193,6 +228,90 @@ const AdminSettings = () => {
       return;
     }
     updateMutation.mutate();
+  };
+
+  // Shift mutations
+  const addShiftMutation = useMutation({
+    mutationFn: async () => {
+      if (!newShiftName.trim()) throw new Error('Nama shift harus diisi');
+      
+      const { error } = await supabase
+        .from('shifts')
+        .insert({
+          name: newShiftName.trim(),
+          start_time: newShiftStart,
+          end_time: newShiftEnd,
+        });
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      toast.success('Shift berhasil ditambahkan!');
+      setNewShiftName('');
+      setNewShiftStart('08:00');
+      setNewShiftEnd('17:00');
+    },
+    onError: (error) => {
+      toast.error('Gagal menambah shift: ' + error.message);
+    },
+  });
+
+  const updateShiftMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingShift) return;
+      
+      const { error } = await supabase
+        .from('shifts')
+        .update({
+          name: editShiftName.trim(),
+          start_time: editShiftStart,
+          end_time: editShiftEnd,
+        })
+        .eq('id', editingShift.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      toast.success('Shift berhasil diperbarui!');
+      setEditingShift(null);
+    },
+    onError: (error) => {
+      toast.error('Gagal memperbarui shift: ' + error.message);
+    },
+  });
+
+  const deleteShiftMutation = useMutation({
+    mutationFn: async (shiftId: string) => {
+      const { error } = await supabase
+        .from('shifts')
+        .delete()
+        .eq('id', shiftId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      toast.success('Shift berhasil dihapus!');
+    },
+    onError: (error) => {
+      toast.error('Gagal menghapus shift: ' + error.message);
+    },
+  });
+
+  const handleEditShift = (shift: Shift) => {
+    setEditingShift(shift);
+    setEditShiftName(shift.name);
+    setEditShiftStart(shift.start_time.slice(0, 5));
+    setEditShiftEnd(shift.end_time.slice(0, 5));
+  };
+
+  const handleCancelEditShift = () => {
+    setEditingShift(null);
+    setEditShiftName('');
+    setEditShiftStart('');
+    setEditShiftEnd('');
   };
 
   // Initialize map only once, separately from data
@@ -485,6 +604,143 @@ const AdminSettings = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Shift Management */}
+        <Card className="border-2 border-foreground">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Manajemen Shift
+            </CardTitle>
+            <CardDescription>
+              Kelola shift kerja karyawan
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Add new shift */}
+            <div className="flex flex-col sm:flex-row gap-2 p-4 rounded-lg border-2 border-foreground bg-muted/30">
+              <Input
+                placeholder="Nama shift (contoh: Pagi)"
+                value={newShiftName}
+                onChange={(e) => setNewShiftName(e.target.value)}
+                className="border-2 border-foreground flex-1"
+              />
+              <div className="flex gap-2">
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs whitespace-nowrap">Mulai:</Label>
+                  <Input
+                    type="time"
+                    value={newShiftStart}
+                    onChange={(e) => setNewShiftStart(e.target.value)}
+                    className="border-2 border-foreground w-28"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs whitespace-nowrap">Selesai:</Label>
+                  <Input
+                    type="time"
+                    value={newShiftEnd}
+                    onChange={(e) => setNewShiftEnd(e.target.value)}
+                    className="border-2 border-foreground w-28"
+                  />
+                </div>
+              </div>
+              <Button 
+                onClick={() => addShiftMutation.mutate()}
+                disabled={addShiftMutation.isPending || !newShiftName.trim()}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Tambah
+              </Button>
+            </div>
+
+            {/* Shift list */}
+            <div className="space-y-2">
+              {shiftsLoading ? (
+                <p className="text-muted-foreground text-center py-4">Memuat shift...</p>
+              ) : shifts?.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">Belum ada shift. Tambahkan shift pertama di atas.</p>
+              ) : (
+                shifts?.map((shift) => (
+                  <div 
+                    key={shift.id}
+                    className="flex items-center justify-between p-3 rounded-lg border-2 border-foreground"
+                  >
+                    {editingShift?.id === shift.id ? (
+                      <div className="flex flex-col sm:flex-row gap-2 flex-1 mr-2">
+                        <Input
+                          value={editShiftName}
+                          onChange={(e) => setEditShiftName(e.target.value)}
+                          className="border-2 border-foreground flex-1"
+                        />
+                        <div className="flex gap-2">
+                          <Input
+                            type="time"
+                            value={editShiftStart}
+                            onChange={(e) => setEditShiftStart(e.target.value)}
+                            className="border-2 border-foreground w-28"
+                          />
+                          <Input
+                            type="time"
+                            value={editShiftEnd}
+                            onChange={(e) => setEditShiftEnd(e.target.value)}
+                            className="border-2 border-foreground w-28"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="font-medium">{shift.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
+                        </p>
+                      </div>
+                    )}
+                    <div className="flex gap-1">
+                      {editingShift?.id === shift.id ? (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => updateShiftMutation.mutate()}
+                            disabled={updateShiftMutation.isPending}
+                          >
+                            <Check className="h-4 w-4 text-green-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleCancelEditShift}
+                          >
+                            <X className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditShift(shift)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteShiftMutation.mutate(shift.id)}
+                            disabled={deleteShiftMutation.isPending}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Map */}
         <Card className="border-2 border-foreground">

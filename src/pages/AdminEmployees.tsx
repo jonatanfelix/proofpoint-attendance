@@ -32,10 +32,21 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Users, Search, MapPin, MapPinOff, Edit, UserPlus, Shield, ShieldCheck, Code, Briefcase, HardHat } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { 
+  Users, Search, MapPin, MapPinOff, Edit, UserPlus, Shield, ShieldCheck, 
+  Code, Briefcase, HardHat, Clock, Filter, CheckCircle2, XCircle, Building2
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
+
+interface Shift {
+  id: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+}
 
 interface Profile {
   id: string;
@@ -47,6 +58,12 @@ interface Profile {
   employee_type: 'office' | 'field';
   company_id: string | null;
   created_at: string;
+  job_title: string | null;
+  department: string | null;
+  avatar_url: string | null;
+  is_active: boolean;
+  shift_id: string | null;
+  shift?: Shift | null;
 }
 
 const AdminEmployees = () => {
@@ -55,9 +72,17 @@ const AdminEmployees = () => {
   const queryClient = useQueryClient();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterDepartment, setFilterDepartment] = useState<string>('all');
+  const [filterShift, setFilterShift] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  
   const [editingEmployee, setEditingEmployee] = useState<Profile | null>(null);
   const [editRequiresGeofence, setEditRequiresGeofence] = useState(true);
   const [editEmployeeType, setEditEmployeeType] = useState<'office' | 'field'>('office');
+  const [editJobTitle, setEditJobTitle] = useState('');
+  const [editDepartment, setEditDepartment] = useState('');
+  const [editShiftId, setEditShiftId] = useState<string>('');
+  const [editIsActive, setEditIsActive] = useState(true);
   
   // Add employee form state
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -65,6 +90,9 @@ const AdminEmployees = () => {
   const [newPassword, setNewPassword] = useState('');
   const [newFullName, setNewFullName] = useState('');
   const [newRole, setNewRole] = useState<'employee' | 'admin'>('employee');
+  const [newJobTitle, setNewJobTitle] = useState('');
+  const [newDepartment, setNewDepartment] = useState('');
+  const [newShiftId, setNewShiftId] = useState<string>('');
   const [isCreating, setIsCreating] = useState(false);
 
   // Check user role
@@ -87,13 +115,32 @@ const AdminEmployees = () => {
   const isDeveloper = userRole === 'developer';
   const isAdminOrDeveloper = userRole === 'admin' || userRole === 'developer';
 
-  // Fetch all employees
+  // Fetch shifts
+  const { data: shifts } = useQuery({
+    queryKey: ['shifts'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('shifts')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+      
+      if (error) throw error;
+      return data as Shift[];
+    },
+    enabled: isAdminOrDeveloper,
+  });
+
+  // Fetch all employees with shift info
   const { data: employees, isLoading: employeesLoading } = useQuery({
-    queryKey: ['admin-employees', searchTerm],
+    queryKey: ['admin-employees'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select(`
+          *,
+          shift:shifts(id, name, start_time, end_time)
+        `)
         .order('full_name', { ascending: true });
 
       if (error) throw error;
@@ -102,16 +149,31 @@ const AdminEmployees = () => {
     enabled: isAdminOrDeveloper,
   });
 
+  // Get unique departments for filter
+  const departments = [...new Set(employees?.map(e => e.department).filter(Boolean) || [])];
+
   // Update employee mutation
   const updateMutation = useMutation({
-    mutationFn: async ({ userId, requiresGeofence, employeeType }: { userId: string; requiresGeofence: boolean; employeeType: 'office' | 'field' }) => {
+    mutationFn: async (updates: {
+      userId: string;
+      requiresGeofence: boolean;
+      employeeType: 'office' | 'field';
+      jobTitle: string;
+      department: string;
+      shiftId: string | null;
+      isActive: boolean;
+    }) => {
       const { error } = await supabase
         .from('profiles')
         .update({ 
-          requires_geofence: requiresGeofence,
-          employee_type: employeeType
+          requires_geofence: updates.requiresGeofence,
+          employee_type: updates.employeeType,
+          job_title: updates.jobTitle || null,
+          department: updates.department || null,
+          shift_id: updates.shiftId || null,
+          is_active: updates.isActive,
         })
-        .eq('user_id', userId);
+        .eq('user_id', updates.userId);
       
       if (error) throw error;
     },
@@ -129,6 +191,10 @@ const AdminEmployees = () => {
     setEditingEmployee(employee);
     setEditRequiresGeofence(employee.requires_geofence);
     setEditEmployeeType(employee.employee_type || 'office');
+    setEditJobTitle(employee.job_title || '');
+    setEditDepartment(employee.department || '');
+    setEditShiftId(employee.shift_id || '');
+    setEditIsActive(employee.is_active);
   };
 
   const handleSaveEdit = () => {
@@ -137,13 +203,17 @@ const AdminEmployees = () => {
       userId: editingEmployee.user_id,
       requiresGeofence: editRequiresGeofence,
       employeeType: editEmployeeType,
+      jobTitle: editJobTitle,
+      department: editDepartment,
+      shiftId: editShiftId || null,
+      isActive: editIsActive,
     });
   };
 
   // Create user handler
   const handleCreateUser = async () => {
     if (!newEmail || !newPassword || !newFullName) {
-      toast.error('Semua field harus diisi');
+      toast.error('Nama, Email, dan Password harus diisi');
       return;
     }
 
@@ -166,6 +236,22 @@ const AdminEmployees = () => {
       if (error) throw error;
       if (data.error) throw new Error(data.error);
 
+      // Update additional fields if provided
+      if (newJobTitle || newDepartment || newShiftId) {
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            job_title: newJobTitle || null,
+            department: newDepartment || null,
+            shift_id: newShiftId || null,
+          })
+          .eq('user_id', data.user.id);
+
+        if (updateError) {
+          console.error('Failed to update additional fields:', updateError);
+        }
+      }
+
       toast.success(`${newRole === 'admin' ? 'Admin' : 'Karyawan'} berhasil ditambahkan!`);
       queryClient.invalidateQueries({ queryKey: ['admin-employees'] });
       setShowAddDialog(false);
@@ -183,16 +269,35 @@ const AdminEmployees = () => {
     setNewPassword('');
     setNewFullName('');
     setNewRole('employee');
+    setNewJobTitle('');
+    setNewDepartment('');
+    setNewShiftId('');
   };
 
   // Filter employees
   const filteredEmployees = employees?.filter((emp) => {
-    if (!searchTerm) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      emp.full_name.toLowerCase().includes(term) ||
-      emp.email.toLowerCase().includes(term)
-    );
+    // Search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      const matchesSearch = 
+        emp.full_name.toLowerCase().includes(term) ||
+        emp.email.toLowerCase().includes(term) ||
+        (emp.job_title?.toLowerCase().includes(term) ?? false) ||
+        (emp.department?.toLowerCase().includes(term) ?? false);
+      if (!matchesSearch) return false;
+    }
+    
+    // Department filter
+    if (filterDepartment !== 'all' && emp.department !== filterDepartment) return false;
+    
+    // Shift filter
+    if (filterShift !== 'all' && emp.shift_id !== filterShift) return false;
+    
+    // Status filter
+    if (filterStatus === 'active' && !emp.is_active) return false;
+    if (filterStatus === 'inactive' && emp.is_active) return false;
+    
+    return true;
   });
 
   // Get role badge
@@ -222,6 +327,10 @@ const AdminEmployees = () => {
     }
   };
 
+  const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  };
+
   // Loading state
   if (roleLoading || employeesLoading) {
     return (
@@ -246,10 +355,10 @@ const AdminEmployees = () => {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="container mx-auto p-4 space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">Manajemen Karyawan</h1>
-            <p className="text-muted-foreground">Kelola daftar karyawan dan pengaturan absensi</p>
+            <p className="text-muted-foreground">Kelola daftar karyawan, shift, dan pengaturan absensi</p>
           </div>
           <Button onClick={() => setShowAddDialog(true)} className="border-2 border-foreground">
             <UserPlus className="h-4 w-4 mr-2" />
@@ -258,10 +367,10 @@ const AdminEmployees = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-5">
           <Card className="border-2 border-foreground">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total User</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
@@ -273,13 +382,13 @@ const AdminEmployees = () => {
 
           <Card className="border-2 border-foreground">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Admin</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Aktif</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-primary" />
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
                 <span className="text-2xl font-bold">
-                  {employees?.filter((e) => e.role === 'admin' || e.role === 'developer').length || 0}
+                  {employees?.filter((e) => e.is_active).length || 0}
                 </span>
               </div>
             </CardContent>
@@ -287,13 +396,13 @@ const AdminEmployees = () => {
 
           <Card className="border-2 border-foreground">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Wajib Geofence</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Non-Aktif</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <MapPin className="h-5 w-5 text-primary" />
+                <XCircle className="h-5 w-5 text-destructive" />
                 <span className="text-2xl font-bold">
-                  {employees?.filter((e) => e.requires_geofence).length || 0}
+                  {employees?.filter((e) => !e.is_active).length || 0}
                 </span>
               </div>
             </CardContent>
@@ -301,48 +410,116 @@ const AdminEmployees = () => {
 
           <Card className="border-2 border-foreground">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Bebas Lokasi</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Kantoran</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <MapPinOff className="h-5 w-5 text-muted-foreground" />
+                <Briefcase className="h-5 w-5 text-blue-600" />
                 <span className="text-2xl font-bold">
-                  {employees?.filter((e) => !e.requires_geofence).length || 0}
+                  {employees?.filter((e) => e.employee_type === 'office').length || 0}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-2 border-foreground">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Lapangan</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <HardHat className="h-5 w-5 text-orange-600" />
+                <span className="text-2xl font-bold">
+                  {employees?.filter((e) => e.employee_type === 'field').length || 0}
                 </span>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Search & Table */}
+        {/* Search & Filters */}
         <Card className="border-2 border-foreground">
           <CardHeader>
-            <CardTitle>Daftar User</CardTitle>
-            <CardDescription>Klik Edit untuk mengubah pengaturan geofence</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Filter className="h-5 w-5" />
+              Filter & Pencarian
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Cari nama atau email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 border-2 border-foreground"
-              />
-            </div>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-4">
+              {/* Search */}
+              <div className="relative sm:col-span-2">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Cari nama, email, jabatan..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 border-2 border-foreground"
+                />
+              </div>
 
-            {/* Table */}
-            <div className="rounded-lg border-2 border-foreground overflow-hidden">
+              {/* Department Filter */}
+              <Select value={filterDepartment} onValueChange={setFilterDepartment}>
+                <SelectTrigger className="border-2 border-foreground">
+                  <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Departemen" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Departemen</SelectItem>
+                  {departments.map((dept) => (
+                    <SelectItem key={dept} value={dept!}>{dept}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Shift Filter */}
+              <Select value={filterShift} onValueChange={setFilterShift}>
+                <SelectTrigger className="border-2 border-foreground">
+                  <Clock className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Shift" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Shift</SelectItem>
+                  {shifts?.map((shift) => (
+                    <SelectItem key={shift.id} value={shift.id}>{shift.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Status Filter */}
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="border-2 border-foreground">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="active">Aktif</SelectItem>
+                  <SelectItem value="inactive">Non-Aktif</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Table */}
+        <Card className="border-2 border-foreground">
+          <CardHeader>
+            <CardTitle>Daftar Karyawan</CardTitle>
+            <CardDescription>
+              Menampilkan {filteredEmployees?.length || 0} dari {employees?.length || 0} karyawan
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-lg border-2 border-foreground overflow-hidden overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
-                    <TableHead>Nama</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
+                    <TableHead>Karyawan</TableHead>
+                    <TableHead>Jabatan</TableHead>
+                    <TableHead>Departemen</TableHead>
+                    <TableHead>Shift</TableHead>
                     <TableHead>Tipe</TableHead>
-                    <TableHead>Geofence</TableHead>
-                    <TableHead>Terdaftar</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead className="text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -350,15 +527,43 @@ const AdminEmployees = () => {
                   {filteredEmployees?.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                        Tidak ada user ditemukan
+                        Tidak ada karyawan ditemukan
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredEmployees?.map((employee) => (
-                      <TableRow key={employee.id}>
-                        <TableCell className="font-medium">{employee.full_name}</TableCell>
-                        <TableCell className="text-muted-foreground">{employee.email}</TableCell>
-                        <TableCell>{getRoleBadge(employee.role)}</TableCell>
+                      <TableRow key={employee.id} className={!employee.is_active ? 'opacity-60' : ''}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-10 w-10 border-2 border-foreground">
+                              <AvatarImage src={employee.avatar_url || undefined} />
+                              <AvatarFallback>{getInitials(employee.full_name)}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="font-medium flex items-center gap-2">
+                                {employee.full_name}
+                                {getRoleBadge(employee.role)}
+                              </div>
+                              <div className="text-sm text-muted-foreground">{employee.email}</div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {employee.job_title || <span className="text-muted-foreground">-</span>}
+                        </TableCell>
+                        <TableCell>
+                          {employee.department || <span className="text-muted-foreground">-</span>}
+                        </TableCell>
+                        <TableCell>
+                          {employee.shift ? (
+                            <Badge variant="outline" className="font-normal">
+                              <Clock className="h-3 w-3 mr-1" />
+                              {employee.shift.name}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           {employee.employee_type === 'field' ? (
                             <Badge variant="outline" className="border-orange-500 text-orange-600">
@@ -373,20 +578,17 @@ const AdminEmployees = () => {
                           )}
                         </TableCell>
                         <TableCell>
-                          {employee.requires_geofence ? (
-                            <Badge variant="outline" className="border-primary text-primary">
-                              <MapPin className="h-3 w-3 mr-1" />
-                              Wajib Kantor
+                          {employee.is_active ? (
+                            <Badge variant="default" className="bg-green-600">
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Aktif
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="border-muted-foreground text-muted-foreground">
-                              <MapPinOff className="h-3 w-3 mr-1" />
-                              Bebas Lokasi
+                            <Badge variant="destructive">
+                              <XCircle className="h-3 w-3 mr-1" />
+                              Non-Aktif
                             </Badge>
                           )}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {format(new Date(employee.created_at), 'dd MMM yyyy', { locale: idLocale })}
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
@@ -410,23 +612,64 @@ const AdminEmployees = () => {
 
       {/* Edit Dialog */}
       <Dialog open={!!editingEmployee} onOpenChange={() => setEditingEmployee(null)}>
-        <DialogContent className="border-2 border-foreground">
+        <DialogContent className="border-2 border-foreground max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Karyawan</DialogTitle>
             <DialogDescription>
-              Ubah pengaturan absensi untuk {editingEmployee?.full_name}
+              Ubah data untuk {editingEmployee?.full_name}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6 py-4">
-            <div className="space-y-2">
-              <Label>Nama</Label>
-              <Input value={editingEmployee?.full_name || ''} disabled className="bg-muted" />
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Nama</Label>
+                <Input value={editingEmployee?.full_name || ''} disabled className="bg-muted" />
+              </div>
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input value={editingEmployee?.email || ''} disabled className="bg-muted" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-job-title">Jabatan</Label>
+                <Input
+                  id="edit-job-title"
+                  value={editJobTitle}
+                  onChange={(e) => setEditJobTitle(e.target.value)}
+                  placeholder="Contoh: Software Engineer"
+                  className="border-2 border-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-department">Departemen</Label>
+                <Input
+                  id="edit-department"
+                  value={editDepartment}
+                  onChange={(e) => setEditDepartment(e.target.value)}
+                  placeholder="Contoh: IT, HR, Finance"
+                  className="border-2 border-foreground"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label>Email</Label>
-              <Input value={editingEmployee?.email || ''} disabled className="bg-muted" />
+              <Label>Shift Kerja</Label>
+              <Select value={editShiftId} onValueChange={setEditShiftId}>
+                <SelectTrigger className="border-2 border-foreground">
+                  <SelectValue placeholder="Pilih shift..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Tidak ada shift</SelectItem>
+                  {shifts?.map((shift) => (
+                    <SelectItem key={shift.id} value={shift.id}>
+                      {shift.name} ({shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -439,22 +682,17 @@ const AdminEmployees = () => {
                   <SelectItem value="office">
                     <div className="flex items-center gap-2">
                       <Briefcase className="h-4 w-4" />
-                      Kantoran - Tampilkan jam masuk & pulang
+                      Kantoran
                     </div>
                   </SelectItem>
                   <SelectItem value="field">
                     <div className="flex items-center gap-2">
                       <HardHat className="h-4 w-4" />
-                      Lapangan - Hitung total jam kerja
+                      Lapangan
                     </div>
                   </SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                {editEmployeeType === 'field' 
-                  ? 'Karyawan lapangan: Total jam kerja dihitung dari clock-in sampai clock-out'
-                  : 'Karyawan kantoran: Hanya tampilkan jam masuk dan jam pulang'}
-              </p>
             </div>
 
             <div className="flex items-center justify-between rounded-lg border-2 border-foreground p-4">
@@ -462,13 +700,28 @@ const AdminEmployees = () => {
                 <Label className="text-base">Wajib Absen di Kantor</Label>
                 <p className="text-sm text-muted-foreground">
                   {editRequiresGeofence 
-                    ? 'Karyawan harus berada dalam radius kantor untuk absen'
-                    : 'Karyawan bisa absen dari mana saja (untuk pekerja lapangan)'}
+                    ? 'Harus dalam radius kantor untuk absen'
+                    : 'Bisa absen dari mana saja'}
                 </p>
               </div>
               <Switch
                 checked={editRequiresGeofence}
                 onCheckedChange={setEditRequiresGeofence}
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border-2 border-foreground p-4">
+              <div className="space-y-1">
+                <Label className="text-base">Status Aktif</Label>
+                <p className="text-sm text-muted-foreground">
+                  {editIsActive 
+                    ? 'Karyawan aktif dan bisa melakukan absensi'
+                    : 'Karyawan non-aktif, tidak bisa absen'}
+                </p>
+              </div>
+              <Switch
+                checked={editIsActive}
+                onCheckedChange={setEditIsActive}
               />
             </div>
           </div>
@@ -486,7 +739,7 @@ const AdminEmployees = () => {
 
       {/* Add User Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="border-2 border-foreground">
+        <DialogContent className="border-2 border-foreground max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Tambah User Baru</DialogTitle>
             <DialogDescription>
@@ -498,7 +751,7 @@ const AdminEmployees = () => {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="new-name">Nama Lengkap</Label>
+              <Label htmlFor="new-name">Nama Lengkap *</Label>
               <Input
                 id="new-name"
                 value={newFullName}
@@ -509,7 +762,7 @@ const AdminEmployees = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="new-email">Email</Label>
+              <Label htmlFor="new-email">Email *</Label>
               <Input
                 id="new-email"
                 type="email"
@@ -521,7 +774,7 @@ const AdminEmployees = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="new-password">Password</Label>
+              <Label htmlFor="new-password">Password *</Label>
               <Input
                 id="new-password"
                 type="password"
@@ -530,6 +783,46 @@ const AdminEmployees = () => {
                 placeholder="Minimal 6 karakter"
                 className="border-2 border-foreground"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-job-title">Jabatan</Label>
+                <Input
+                  id="new-job-title"
+                  value={newJobTitle}
+                  onChange={(e) => setNewJobTitle(e.target.value)}
+                  placeholder="Software Engineer"
+                  className="border-2 border-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-department">Departemen</Label>
+                <Input
+                  id="new-department"
+                  value={newDepartment}
+                  onChange={(e) => setNewDepartment(e.target.value)}
+                  placeholder="IT"
+                  className="border-2 border-foreground"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Shift Kerja</Label>
+              <Select value={newShiftId} onValueChange={setNewShiftId}>
+                <SelectTrigger className="border-2 border-foreground">
+                  <SelectValue placeholder="Pilih shift..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Tidak ada shift</SelectItem>
+                  {shifts?.map((shift) => (
+                    <SelectItem key={shift.id} value={shift.id}>
+                      {shift.name} ({shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {isDeveloper && (
@@ -554,9 +847,6 @@ const AdminEmployees = () => {
                     </SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  Admin dapat mengelola karyawan dan pengaturan. Karyawan hanya dapat mengakses dashboard absensi.
-                </p>
               </div>
             )}
 

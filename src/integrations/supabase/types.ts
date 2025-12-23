@@ -135,38 +135,53 @@ export type Database = {
       }
       profiles: {
         Row: {
+          avatar_url: string | null
           company_id: string | null
           created_at: string
+          department: string | null
           email: string
           employee_type: Database["public"]["Enums"]["employee_type"]
           full_name: string
           id: string
+          is_active: boolean
+          job_title: string | null
           requires_geofence: boolean
           role: Database["public"]["Enums"]["app_role"]
+          shift_id: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          avatar_url?: string | null
           company_id?: string | null
           created_at?: string
+          department?: string | null
           email: string
           employee_type?: Database["public"]["Enums"]["employee_type"]
           full_name: string
           id?: string
+          is_active?: boolean
+          job_title?: string | null
           requires_geofence?: boolean
           role?: Database["public"]["Enums"]["app_role"]
+          shift_id?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          avatar_url?: string | null
           company_id?: string | null
           created_at?: string
+          department?: string | null
           email?: string
           employee_type?: Database["public"]["Enums"]["employee_type"]
           full_name?: string
           id?: string
+          is_active?: boolean
+          job_title?: string | null
           requires_geofence?: boolean
           role?: Database["public"]["Enums"]["app_role"]
+          shift_id?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -178,7 +193,44 @@ export type Database = {
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "profiles_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      shifts: {
+        Row: {
+          created_at: string
+          end_time: string
+          id: string
+          is_active: boolean
+          name: string
+          start_time: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          end_time: string
+          id?: string
+          is_active?: boolean
+          name: string
+          start_time: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          end_time?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          start_time?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {
