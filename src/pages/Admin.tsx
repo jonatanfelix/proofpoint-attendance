@@ -77,6 +77,8 @@ const Admin = () => {
     enabled: !!user?.id,
   });
 
+  const isAdminOrDeveloper = userRole === 'admin' || userRole === 'developer';
+
   // Fetch all attendance records (admin only)
   const { data: records, isLoading: recordsLoading } = useQuery({
     queryKey: ['admin-attendance', searchTerm, startDate, endDate],
@@ -125,7 +127,7 @@ const Admin = () => {
 
       return combined;
     },
-    enabled: userRole === 'admin',
+    enabled: isAdminOrDeveloper,
   });
 
   // Stats
@@ -155,7 +157,7 @@ const Admin = () => {
         totalLocations: totalLocations || 0,
       };
     },
-    enabled: userRole === 'admin',
+    enabled: isAdminOrDeveloper,
   });
 
   // Transform records to daily format for export
@@ -258,7 +260,7 @@ const Admin = () => {
     );
   }
 
-  if (userRole !== 'admin') {
+  if (!isAdminOrDeveloper) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
