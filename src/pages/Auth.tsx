@@ -6,27 +6,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { MapPin, Clock, Shield } from 'lucide-react';
+import { MapPin, Clock, Shield, Info } from 'lucide-react';
 import { z } from 'zod';
 
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-
-const signupSchema = loginSchema.extend({
-  fullName: z.string().min(2, 'Name must be at least 2 characters').max(100, 'Name too long'),
+  email: z.string().email('Email tidak valid'),
+  password: z.string().min(6, 'Password minimal 6 karakter'),
 });
 
 const Auth = () => {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   
-  const { signIn, signUp, user, loading } = useAuth();
+  const { signIn, user, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -40,11 +34,7 @@ const Auth = () => {
     setErrors({});
     
     try {
-      if (isLogin) {
-        loginSchema.parse({ email, password });
-      } else {
-        signupSchema.parse({ email, password, fullName });
-      }
+      loginSchema.parse({ email, password });
       return true;
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -68,52 +58,27 @@ const Auth = () => {
     setIsSubmitting(true);
 
     try {
-      if (isLogin) {
-        const { error } = await signIn(email, password);
-        if (error) {
-          if (error.message.includes('Invalid login credentials')) {
-            toast({
-              title: 'Login Failed',
-              description: 'Invalid email or password. Please try again.',
-              variant: 'destructive',
-            });
-          } else {
-            toast({
-              title: 'Login Failed',
-              description: error.message,
-              variant: 'destructive',
-            });
-          }
+      const { error } = await signIn(email, password);
+      if (error) {
+        if (error.message.includes('Invalid login credentials')) {
+          toast({
+            title: 'Login Gagal',
+            description: 'Email atau password salah. Silakan coba lagi.',
+            variant: 'destructive',
+          });
         } else {
           toast({
-            title: 'Welcome back!',
-            description: 'You have successfully logged in.',
+            title: 'Login Gagal',
+            description: error.message,
+            variant: 'destructive',
           });
-          navigate('/');
         }
       } else {
-        const { error } = await signUp(email, password, fullName);
-        if (error) {
-          if (error.message.includes('already registered')) {
-            toast({
-              title: 'Account Exists',
-              description: 'This email is already registered. Please login instead.',
-              variant: 'destructive',
-            });
-          } else {
-            toast({
-              title: 'Sign Up Failed',
-              description: error.message,
-              variant: 'destructive',
-            });
-          }
-        } else {
-          toast({
-            title: 'Account Created!',
-            description: 'Welcome to GeoAttend. You are now logged in.',
-          });
-          navigate('/');
-        }
+        toast({
+          title: 'Selamat Datang!',
+          description: 'Anda berhasil login.',
+        });
+        navigate('/');
       }
     } finally {
       setIsSubmitting(false);
@@ -172,35 +137,13 @@ const Auth = () => {
         {/* Auth Card */}
         <Card className="w-full max-w-md border-2 border-foreground shadow-md">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl">
-              {isLogin ? 'Welcome Back' : 'Create Account'}
-            </CardTitle>
+            <CardTitle className="text-2xl">Selamat Datang</CardTitle>
             <CardDescription>
-              {isLogin 
-                ? 'Enter your credentials to access your account' 
-                : 'Sign up to start tracking attendance'}
+              Masukkan kredensial untuk mengakses akun Anda
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {!isLogin && (
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
-                  <Input
-                    id="fullName"
-                    type="text"
-                    placeholder="John Doe"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="border-2 border-foreground"
-                    disabled={isSubmitting}
-                  />
-                  {errors.fullName && (
-                    <p className="text-sm text-destructive">{errors.fullName}</p>
-                  )}
-                </div>
-              )}
-              
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -238,25 +181,19 @@ const Auth = () => {
                 className="w-full border-2 border-foreground shadow-sm"
                 disabled={isSubmitting}
               >
-                {isSubmitting 
-                  ? (isLogin ? 'Signing in...' : 'Creating account...') 
-                  : (isLogin ? 'Sign In' : 'Create Account')}
+                {isSubmitting ? 'Signing in...' : 'Sign In'}
               </Button>
             </form>
 
-            <div className="mt-4 text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsLogin(!isLogin);
-                  setErrors({});
-                }}
-                className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
-              >
-                {isLogin 
-                  ? "Don't have an account? Sign up" 
-                  : 'Already have an account? Sign in'}
-              </button>
+            {/* Info about signup */}
+            <div className="mt-4 p-3 rounded-lg bg-muted border-2 border-foreground">
+              <div className="flex items-start gap-2">
+                <Info className="h-5 w-5 mt-0.5 shrink-0 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  Pendaftaran akun baru hanya dapat dilakukan oleh Admin. 
+                  Hubungi Admin perusahaan Anda untuk mendapatkan akun.
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>

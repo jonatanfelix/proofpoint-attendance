@@ -24,8 +24,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Users, Search, MapPin, MapPinOff, Edit } from 'lucide-react';
+import { Users, Search, MapPin, MapPinOff, Edit, UserPlus, Shield, ShieldCheck, Code } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
@@ -49,8 +56,16 @@ const AdminEmployees = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingEmployee, setEditingEmployee] = useState<Profile | null>(null);
   const [editRequiresGeofence, setEditRequiresGeofence] = useState(true);
+  
+  // Add employee form state
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newFullName, setNewFullName] = useState('');
+  const [newRole, setNewRole] = useState<'employee' | 'admin'>('employee');
+  const [isCreating, setIsCreating] = useState(false);
 
-  // Check if user is admin
+  // Check user role
   const { data: userRole, isLoading: roleLoading } = useQuery({
     queryKey: ['user-role', user?.id],
     queryFn: async () => {
@@ -62,25 +77,27 @@ const AdminEmployees = () => {
         .maybeSingle();
       
       if (error) throw error;
-      return data?.role;
+      return data?.role as string;
     },
     enabled: !!user?.id,
   });
+
+  const isDeveloper = userRole === 'developer';
+  const isAdminOrDeveloper = userRole === 'admin' || userRole === 'developer';
 
   // Fetch all employees
   const { data: employees, isLoading: employeesLoading } = useQuery({
     queryKey: ['admin-employees', searchTerm],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .order('full_name', { ascending: true });
 
-      const { data, error } = await query;
       if (error) throw error;
       return data as Profile[];
     },
-    enabled: userRole === 'admin',
+    enabled: isAdminOrDeveloper,
   });
 
   // Update employee mutation
@@ -116,6 +133,51 @@ const AdminEmployees = () => {
     });
   };
 
+  // Create user handler
+  const handleCreateUser = async () => {
+    if (!newEmail || !newPassword || !newFullName) {
+      toast.error('Semua field harus diisi');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      toast.error('Password minimal 6 karakter');
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: {
+          email: newEmail,
+          password: newPassword,
+          fullName: newFullName,
+          role: newRole,
+        },
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      toast.success(`${newRole === 'admin' ? 'Admin' : 'Karyawan'} berhasil ditambahkan!`);
+      queryClient.invalidateQueries({ queryKey: ['admin-employees'] });
+      setShowAddDialog(false);
+      resetAddForm();
+    } catch (error: any) {
+      console.error('Create user error:', error);
+      toast.error(error.message || 'Gagal menambahkan user');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const resetAddForm = () => {
+    setNewEmail('');
+    setNewPassword('');
+    setNewFullName('');
+    setNewRole('employee');
+  };
+
   // Filter employees
   const filteredEmployees = employees?.filter((emp) => {
     if (!searchTerm) return true;
@@ -125,6 +187,33 @@ const AdminEmployees = () => {
       emp.email.toLowerCase().includes(term)
     );
   });
+
+  // Get role badge
+  const getRoleBadge = (role: string) => {
+    switch (role) {
+      case 'developer':
+        return (
+          <Badge variant="default" className="bg-primary">
+            <Code className="h-3 w-3 mr-1" />
+            Developer
+          </Badge>
+        );
+      case 'admin':
+        return (
+          <Badge variant="default">
+            <ShieldCheck className="h-3 w-3 mr-1" />
+            Admin
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="secondary">
+            <Shield className="h-3 w-3 mr-1" />
+            Karyawan
+          </Badge>
+        );
+    }
+  };
 
   // Loading state
   if (roleLoading || employeesLoading) {
@@ -140,8 +229,8 @@ const AdminEmployees = () => {
     );
   }
 
-  // Not admin - redirect
-  if (userRole !== 'admin') {
+  // Not admin or developer - redirect
+  if (!isAdminOrDeveloper) {
     navigate('/');
     return null;
   }
@@ -150,21 +239,41 @@ const AdminEmployees = () => {
     <div className="min-h-screen bg-background">
       <Header />
       <main className="container mx-auto p-4 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Manajemen Karyawan</h1>
-          <p className="text-muted-foreground">Kelola daftar karyawan dan pengaturan absensi</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Manajemen Karyawan</h1>
+            <p className="text-muted-foreground">Kelola daftar karyawan dan pengaturan absensi</p>
+          </div>
+          <Button onClick={() => setShowAddDialog(true)} className="border-2 border-foreground">
+            <UserPlus className="h-4 w-4 mr-2" />
+            Tambah {isDeveloper ? 'User' : 'Karyawan'}
+          </Button>
         </div>
 
         {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-4">
           <Card className="border-2 border-foreground">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Karyawan</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total User</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-primary" />
                 <span className="text-2xl font-bold">{employees?.length || 0}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-2 border-foreground">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Admin</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                <span className="text-2xl font-bold">
+                  {employees?.filter((e) => e.role === 'admin' || e.role === 'developer').length || 0}
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -201,8 +310,8 @@ const AdminEmployees = () => {
         {/* Search & Table */}
         <Card className="border-2 border-foreground">
           <CardHeader>
-            <CardTitle>Daftar Karyawan</CardTitle>
-            <CardDescription>Klik Edit untuk mengubah pengaturan geofence karyawan</CardDescription>
+            <CardTitle>Daftar User</CardTitle>
+            <CardDescription>Klik Edit untuk mengubah pengaturan geofence</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Search */}
@@ -233,7 +342,7 @@ const AdminEmployees = () => {
                   {filteredEmployees?.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                        Tidak ada karyawan ditemukan
+                        Tidak ada user ditemukan
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -241,11 +350,7 @@ const AdminEmployees = () => {
                       <TableRow key={employee.id}>
                         <TableCell className="font-medium">{employee.full_name}</TableCell>
                         <TableCell className="text-muted-foreground">{employee.email}</TableCell>
-                        <TableCell>
-                          <Badge variant={employee.role === 'admin' ? 'default' : 'secondary'}>
-                            {employee.role === 'admin' ? 'Admin' : 'Karyawan'}
-                          </Badge>
-                        </TableCell>
+                        <TableCell>{getRoleBadge(employee.role)}</TableCell>
                         <TableCell>
                           {employee.requires_geofence ? (
                             <Badge variant="outline" className="border-primary text-primary">
@@ -325,6 +430,102 @@ const AdminEmployees = () => {
             </Button>
             <Button onClick={handleSaveEdit} disabled={updateMutation.isPending}>
               {updateMutation.isPending ? 'Menyimpan...' : 'Simpan'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add User Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="border-2 border-foreground">
+          <DialogHeader>
+            <DialogTitle>Tambah User Baru</DialogTitle>
+            <DialogDescription>
+              {isDeveloper 
+                ? 'Sebagai Developer, Anda bisa menambahkan Admin atau Karyawan'
+                : 'Sebagai Admin, Anda hanya bisa menambahkan Karyawan'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-name">Nama Lengkap</Label>
+              <Input
+                id="new-name"
+                value={newFullName}
+                onChange={(e) => setNewFullName(e.target.value)}
+                placeholder="John Doe"
+                className="border-2 border-foreground"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="new-email">Email</Label>
+              <Input
+                id="new-email"
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="john@company.com"
+                className="border-2 border-foreground"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="new-password">Password</Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Minimal 6 karakter"
+                className="border-2 border-foreground"
+              />
+            </div>
+
+            {isDeveloper && (
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select value={newRole} onValueChange={(v) => setNewRole(v as 'employee' | 'admin')}>
+                  <SelectTrigger className="border-2 border-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="employee">
+                      <div className="flex items-center gap-2">
+                        <Shield className="h-4 w-4" />
+                        Karyawan
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="admin">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4" />
+                        Admin
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Admin dapat mengelola karyawan dan pengaturan. Karyawan hanya dapat mengakses dashboard absensi.
+                </p>
+              </div>
+            )}
+
+            {!isDeveloper && (
+              <div className="p-3 rounded-lg bg-muted border-2 border-foreground">
+                <p className="text-sm text-muted-foreground">
+                  User baru akan dibuat sebagai <strong>Karyawan</strong>
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setShowAddDialog(false); resetAddForm(); }}>
+              Batal
+            </Button>
+            <Button onClick={handleCreateUser} disabled={isCreating}>
+              {isCreating ? 'Membuat...' : 'Tambah User'}
             </Button>
           </div>
         </DialogContent>
