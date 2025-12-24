@@ -244,12 +244,20 @@ const Admin = () => {
 
     XLSX.utils.book_append_sheet(wb, ws, 'Absensi');
 
-    // Generate filename with date range
-    const dateRange = startDate && endDate 
-      ? `${startDate}_${endDate}` 
-      : format(new Date(), 'yyyy-MM-dd');
+    // Generate filename with date range - dynamic naming
+    let fileName = 'Attendance_Report';
+    if (startDate && endDate) {
+      fileName = `Attendance_Report_${startDate}_to_${endDate}`;
+    } else if (startDate) {
+      fileName = `Attendance_Report_from_${startDate}`;
+    } else if (endDate) {
+      fileName = `Attendance_Report_until_${endDate}`;
+    } else {
+      fileName = `Attendance_Report_${format(new Date(), 'yyyy-MM-dd')}`;
+    }
     
-    XLSX.writeFile(wb, `Laporan_Absensi_${dateRange}.xlsx`);
+    XLSX.writeFile(wb, `${fileName}.xlsx`);
+    toast.success(`Data diekspor: ${fileName}.xlsx`);
   };
 
   if (roleLoading) {
