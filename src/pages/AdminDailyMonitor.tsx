@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -7,7 +7,6 @@ import Header from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -29,7 +28,7 @@ import {
   Palmtree, Coffee, Loader2, RefreshCw, Search, Filter, Radio
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 
 interface Employee {
@@ -92,7 +91,6 @@ const AdminDailyMonitor = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
 
   // Check if user is admin
   const { data: userRole, isLoading: roleLoading } = useQuery({
@@ -160,29 +158,36 @@ const AdminDailyMonitor = () => {
     refetchInterval: autoRefresh ? REFRESH_INTERVAL : false,
   });
 
-  // Fetch attendance for selected date
-  const { data: attendance, isLoading: attendanceLoading, refetch: refetchAttendance } = useQuery({
+  // Fetch attendance for selected date with proper timezone handling
+  const { data: attendance, isLoading: attendanceLoading, refetch: refetchAttendance, dataUpdatedAt } = useQuery({
     queryKey: ['daily-attendance', selectedDate],
     queryFn: async () => {
-      const startOfDay = `${selectedDate}T00:00:00`;
-      const endOfDay = `${selectedDate}T23:59:59`;
+      // Create proper date boundaries with timezone
+      const dateObj = parseISO(selectedDate);
+      const dayStart = startOfDay(dateObj).toISOString();
+      const dayEnd = endOfDay(dateObj).toISOString();
 
       const { data, error } = await supabase
         .from('attendance_records')
         .select('id, user_id, record_type, recorded_at')
-        .gte('recorded_at', startOfDay)
-        .lte('recorded_at', endOfDay);
+        .gte('recorded_at', dayStart)
+        .lte('recorded_at', dayEnd)
+        .order('recorded_at', { ascending: true }); // Order for consistent first clock_in
 
       if (error) throw error;
-      setLastRefresh(new Date());
       return data as AttendanceRecord[];
     },
     enabled: isAdminOrDeveloper,
     refetchInterval: autoRefresh ? REFRESH_INTERVAL : false,
   });
 
-  // Fetch approved leaves that overlap with selected date
-  const { data: leaves } = useQuery({
+  // Track last refresh time from query's dataUpdatedAt (fixes memory leak)
+  const lastRefreshTime = useMemo(() => {
+    return dataUpdatedAt ? new Date(dataUpdatedAt) : new Date();
+  }, [dataUpdatedAt]);
+
+  // Fetch approved leaves that overlap with selected date (with auto-refresh)
+  const { data: leaves, refetch: refetchLeaves } = useQuery({
     queryKey: ['daily-leaves', selectedDate],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -196,6 +201,7 @@ const AdminDailyMonitor = () => {
       return data as LeaveRequest[];
     },
     enabled: isAdminOrDeveloper,
+    refetchInterval: autoRefresh ? REFRESH_INTERVAL : false,
   });
 
   // Fetch holiday for selected date
@@ -215,53 +221,70 @@ const AdminDailyMonitor = () => {
     enabled: isAdminOrDeveloper,
   });
 
-  // Process employees with their status
-  const processedEmployees: EmployeeWithStatus[] = (employees || []).map((emp) => {
-    // Check if it's a holiday
-    if (holiday) {
-      return {
-        ...emp,
-        status: 'holiday' as EmployeeStatus,
-        clockInTime: null,
-        clockOutTime: null,
-        lateMinutes: 0,
-        leaveType: null,
-        holidayName: holiday.name,
-      };
-    }
-
-    // Check if employee is on leave
-    const employeeLeave = leaves?.find((l) => l.user_id === emp.user_id);
-    if (employeeLeave) {
-      return {
-        ...emp,
-        status: 'on_leave' as EmployeeStatus,
-        clockInTime: null,
-        clockOutTime: null,
-        lateMinutes: 0,
-        leaveType: employeeLeave.leave_type,
-        holidayName: null,
-      };
-    }
-
-    // Get attendance records for this employee
-    const empAttendance = attendance?.filter((a) => a.user_id === emp.user_id) || [];
-    const clockIn = empAttendance.find((a) => a.record_type === 'clock_in');
-    const clockOut = empAttendance.find((a) => a.record_type === 'clock_out');
-
-    if (!clockIn) {
-      // Check if it's still before work start time (for today only)
-      const isToday = selectedDate === today;
-      const now = new Date();
-      const workStartTime = emp.shifts?.start_time || company?.work_start_time || '08:00:00';
-      const [hours, minutes] = workStartTime.split(':').map(Number);
-      const workStart = new Date();
-      workStart.setHours(hours, minutes, 0, 0);
-
-      if (isToday && now < workStart) {
+  // Process employees with their status (memoized for performance)
+  const processedEmployees = useMemo<EmployeeWithStatus[]>(() => {
+    if (!employees) return [];
+    
+    return employees.map((emp) => {
+      // Check if it's a holiday
+      if (holiday) {
         return {
           ...emp,
-          status: 'not_yet' as EmployeeStatus,
+          status: 'holiday' as EmployeeStatus,
+          clockInTime: null,
+          clockOutTime: null,
+          lateMinutes: 0,
+          leaveType: null,
+          holidayName: holiday.name,
+        };
+      }
+
+      // Check if employee is on leave
+      const employeeLeave = leaves?.find((l) => l.user_id === emp.user_id);
+      if (employeeLeave) {
+        return {
+          ...emp,
+          status: 'on_leave' as EmployeeStatus,
+          clockInTime: null,
+          clockOutTime: null,
+          lateMinutes: 0,
+          leaveType: employeeLeave.leave_type,
+          holidayName: null,
+        };
+      }
+
+      // Get attendance records for this employee (sorted by recorded_at from query)
+      const empAttendance = attendance?.filter((a) => a.user_id === emp.user_id) || [];
+      // Get first clock_in and last clock_out to handle multiple records
+      const clockIns = empAttendance.filter((a) => a.record_type === 'clock_in');
+      const clockOuts = empAttendance.filter((a) => a.record_type === 'clock_out');
+      const firstClockIn = clockIns.length > 0 ? clockIns[0] : null;
+      const lastClockOut = clockOuts.length > 0 ? clockOuts[clockOuts.length - 1] : null;
+
+      if (!firstClockIn) {
+        // Check if it's still before work start time (for today only)
+        const isToday = selectedDate === today;
+        const now = new Date();
+        const workStartTime = emp.shifts?.start_time || company?.work_start_time || '08:00:00';
+        const [hours, minutes] = workStartTime.split(':').map(Number);
+        const workStart = new Date();
+        workStart.setHours(hours, minutes, 0, 0);
+
+        if (isToday && now < workStart) {
+          return {
+            ...emp,
+            status: 'not_yet' as EmployeeStatus,
+            clockInTime: null,
+            clockOutTime: null,
+            lateMinutes: 0,
+            leaveType: null,
+            holidayName: null,
+          };
+        }
+
+        return {
+          ...emp,
+          status: 'absent' as EmployeeStatus,
           clockInTime: null,
           clockOutTime: null,
           lateMinutes: 0,
@@ -270,37 +293,27 @@ const AdminDailyMonitor = () => {
         };
       }
 
+      // Calculate lateness using first clock_in
+      const clockInTime = new Date(firstClockIn.recorded_at);
+      const workStartTime = emp.shifts?.start_time || company?.work_start_time || '08:00:00';
+      const [hours, minutes] = workStartTime.split(':').map(Number);
+      const workStart = new Date(clockInTime);
+      workStart.setHours(hours, minutes, 0, 0);
+
+      const lateMs = clockInTime.getTime() - workStart.getTime();
+      const lateMinutes = Math.max(0, Math.floor(lateMs / 60000));
+
       return {
         ...emp,
-        status: 'absent' as EmployeeStatus,
-        clockInTime: null,
-        clockOutTime: null,
-        lateMinutes: 0,
+        status: lateMinutes > 0 ? 'late' as EmployeeStatus : 'on_time' as EmployeeStatus,
+        clockInTime: format(clockInTime, 'HH:mm'),
+        clockOutTime: lastClockOut ? format(new Date(lastClockOut.recorded_at), 'HH:mm') : null,
+        lateMinutes,
         leaveType: null,
         holidayName: null,
       };
-    }
-
-    // Calculate lateness
-    const clockInTime = new Date(clockIn.recorded_at);
-    const workStartTime = emp.shifts?.start_time || company?.work_start_time || '08:00:00';
-    const [hours, minutes] = workStartTime.split(':').map(Number);
-    const workStart = new Date(clockInTime);
-    workStart.setHours(hours, minutes, 0, 0);
-
-    const lateMs = clockInTime.getTime() - workStart.getTime();
-    const lateMinutes = Math.max(0, Math.floor(lateMs / 60000));
-
-    return {
-      ...emp,
-      status: lateMinutes > 0 ? 'late' as EmployeeStatus : 'on_time' as EmployeeStatus,
-      clockInTime: format(clockInTime, 'HH:mm'),
-      clockOutTime: clockOut ? format(new Date(clockOut.recorded_at), 'HH:mm') : null,
-      lateMinutes,
-      leaveType: null,
-      holidayName: null,
-    };
-  });
+    });
+  }, [employees, holiday, leaves, attendance, selectedDate, today, company?.work_start_time]);
 
   // Get unique departments for filter
   const departments = [...new Set(employees?.map((e) => e.department).filter(Boolean) || [])];
@@ -449,6 +462,7 @@ const AdminDailyMonitor = () => {
                 onClick={() => {
                   refetchAttendance();
                   refetchEmployees();
+                  refetchLeaves();
                 }}
                 className="border-2 border-foreground"
               >
@@ -480,7 +494,7 @@ const AdminDailyMonitor = () => {
                   )}
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  Terakhir diperbarui: {format(lastRefresh, 'HH:mm:ss')}
+                  Terakhir diperbarui: {format(lastRefreshTime, 'HH:mm:ss')}
                 </div>
               </div>
             </CardContent>
