@@ -608,7 +608,7 @@ const Dashboard = () => {
                       className="border-2 border-foreground"
                       onClick={() => {
                         window.open(
-                          `https://www.google.com/maps?q=${currentPosition.latitude},${currentPosition.longitude}`,
+                          `https://www.google.com/maps/place/${currentPosition.latitude},${currentPosition.longitude}/@${currentPosition.latitude},${currentPosition.longitude},17z`,
                           '_blank'
                         );
                       }}
