@@ -434,30 +434,9 @@ const Dashboard = () => {
     );
   }
 
-  // Show orphan user message if no company assigned (only after profile is loaded)
-  if (profile && !profile.company_id) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <main className="container mx-auto max-w-2xl px-4 py-6">
-          <Card className="border-2 border-destructive">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-destructive">
-                <AlertTriangle className="h-5 w-5" />
-                Belum Terdaftar di Perusahaan
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                Akun Anda belum terhubung ke perusahaan manapun. 
-                Silakan hubungi Admin untuk mendaftarkan Anda ke perusahaan.
-              </p>
-            </CardContent>
-          </Card>
-        </main>
-      </div>
-    );
-  }
+  // Show warning banner if no company assigned (but don't block the dashboard)
+  // This should rarely happen since only admins can create users
+  const showCompanyWarning = profile && !profile.company_id;
 
   return (
     <div className="min-h-screen bg-background">
@@ -465,6 +444,23 @@ const Dashboard = () => {
 
       <main className="container mx-auto max-w-2xl px-4 py-6">
         <div className="space-y-6">
+          {/* Warning if no company assigned */}
+          {showCompanyWarning && (
+            <Card className="border-2 border-warning bg-warning/5">
+              <CardContent className="py-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Belum Terdaftar di Perusahaan</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Akun Anda belum terhubung ke perusahaan. Hubungi Admin untuk didaftarkan.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Status Card */}
           <StatusCard
             status={status}
