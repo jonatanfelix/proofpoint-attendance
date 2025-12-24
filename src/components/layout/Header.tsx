@@ -1,4 +1,4 @@
-import { MapPin, LogOut, User, Shield, Home, Settings, Users, Code } from 'lucide-react';
+import { MapPin, LogOut, User, Shield, Home, Settings, Users, Code, CalendarDays, Calendar } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -72,6 +72,18 @@ const Header = () => {
               <Home className="h-4 w-4" />
               Dashboard
             </Link>
+            <Link
+              to="/leave-request"
+              className={cn(
+                'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                location.pathname === '/leave-request'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              )}
+            >
+              <CalendarDays className="h-4 w-4" />
+              Izin/Cuti
+            </Link>
             {isAdminOrDeveloper && (
               <>
                 <Link
@@ -97,6 +109,30 @@ const Header = () => {
                 >
                   <Users className="h-4 w-4" />
                   Karyawan
+                </Link>
+                <Link
+                  to="/admin/leaves"
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                    location.pathname === '/admin/leaves'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  Izin
+                </Link>
+                <Link
+                  to="/admin/holidays"
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                    location.pathname === '/admin/holidays'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  <Calendar className="h-4 w-4" />
+                  Libur
                 </Link>
                 <Link
                   to="/admin/settings"
@@ -138,8 +174,16 @@ const Header = () => {
                   Profil & Password
                 </Link>
               </DropdownMenuItem>
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link to="/leave-request">
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Ajukan Izin/Cuti
+                </Link>
+              </DropdownMenuItem>
               {isAdminOrDeveloper && (
                 <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">Admin Menu</DropdownMenuLabel>
                   <DropdownMenuItem asChild className="cursor-pointer sm:hidden">
                     <Link to="/admin">
                       <Shield className="mr-2 h-4 w-4" />
@@ -150,6 +194,18 @@ const Header = () => {
                     <Link to="/admin/employees">
                       <Users className="mr-2 h-4 w-4" />
                       Karyawan
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="cursor-pointer sm:hidden">
+                    <Link to="/admin/leaves">
+                      <CalendarDays className="mr-2 h-4 w-4" />
+                      Kelola Izin
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="cursor-pointer sm:hidden">
+                    <Link to="/admin/holidays">
+                      <Calendar className="mr-2 h-4 w-4" />
+                      Hari Libur
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild className="cursor-pointer sm:hidden">

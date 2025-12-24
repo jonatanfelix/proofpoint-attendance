@@ -10,6 +10,9 @@ import Auth from "./pages/Auth";
 import Admin from "./pages/Admin";
 import AdminSettings from "./pages/AdminSettings";
 import AdminEmployees from "./pages/AdminEmployees";
+import AdminLeaves from "./pages/AdminLeaves";
+import AdminHolidays from "./pages/AdminHolidays";
+import LeaveRequest from "./pages/LeaveRequest";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
@@ -41,6 +44,14 @@ const App = () => (
               }
             />
             <Route
+              path="/leave-request"
+              element={
+                <ProtectedRoute>
+                  <LeaveRequest />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/admin"
               element={
                 <ProtectedRoute>
@@ -61,6 +72,22 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AdminEmployees />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/leaves"
+              element={
+                <ProtectedRoute>
+                  <AdminLeaves />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/holidays"
+              element={
+                <ProtectedRoute>
+                  <AdminHolidays />
                 </ProtectedRoute>
               }
             />
