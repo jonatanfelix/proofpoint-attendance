@@ -72,6 +72,20 @@ const LeaveRequest = () => {
       if (!user?.id) throw new Error('User not found');
       if (!leaveType) throw new Error('Pilih jenis izin');
       if (!startDate || !endDate) throw new Error('Tanggal harus diisi');
+      
+      // Validate date range
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      if (start > end) {
+        throw new Error('Tanggal mulai tidak boleh lebih besar dari tanggal selesai');
+      }
+      
+      if (start < today) {
+        throw new Error('Tidak dapat mengajukan izin untuk tanggal yang sudah lewat');
+      }
 
       const { error } = await supabase.from('leave_requests').insert({
         user_id: user.id,

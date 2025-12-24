@@ -79,12 +79,14 @@ const CameraCapture = ({
   useEffect(() => {
     if (isOpen) {
       startCamera();
+    } else {
+      stopCamera();
     }
     
     return () => {
       stopCamera();
     };
-  }, [isOpen]); // Only depend on isOpen
+  }, [isOpen, startCamera, stopCamera]);
 
   const capturePhoto = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;

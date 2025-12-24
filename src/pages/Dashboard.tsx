@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -128,42 +128,41 @@ const Dashboard = () => {
     enabled: !!user?.id,
   });
 
-  // Get current attendance status
-  const getAttendanceStatus = useCallback(() => {
-    if (!recentRecords || recentRecords.length === 0) return 'not_present';
-
+  // Memoize today's date string to avoid recalculating every render
+  // This will update if the component remounts (e.g., page refresh)
+  const todayDateString = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    return today.getTime();
+  }, []);
+
+  // Get current attendance status
+  const status = useMemo(() => {
+    if (!recentRecords || recentRecords.length === 0) return 'not_present';
 
     const todayRecords = recentRecords.filter((r) => {
       const recordDate = new Date(r.recorded_at);
       recordDate.setHours(0, 0, 0, 0);
-      return recordDate.getTime() === today.getTime();
+      return recordDate.getTime() === todayDateString;
     });
 
     if (todayRecords.length === 0) return 'not_present';
 
     const lastRecord = todayRecords[0];
     return lastRecord.record_type === 'clock_in' ? 'clocked_in' : 'clocked_out';
-  }, [recentRecords]);
-
-  const status = getAttendanceStatus();
+  }, [recentRecords, todayDateString]);
 
   // Get today's clock in record specifically
-  const getTodayClockIn = useCallback(() => {
+  const todayClockIn = useMemo(() => {
     if (!recentRecords) return null;
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     
     return recentRecords.find((r) => {
       const recordDate = new Date(r.recorded_at);
       recordDate.setHours(0, 0, 0, 0);
-      return recordDate.getTime() === today.getTime() && r.record_type === 'clock_in';
+      return recordDate.getTime() === todayDateString && r.record_type === 'clock_in';
     });
-  }, [recentRecords]);
+  }, [recentRecords, todayDateString]);
 
-  const todayClockIn = getTodayClockIn();
   const lastClockIn = recentRecords?.find((r) => r.record_type === 'clock_in');
   const lastClockOut = recentRecords?.find((r) => r.record_type === 'clock_out');
 
