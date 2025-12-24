@@ -210,6 +210,29 @@ const AdminEmployees = () => {
     });
   };
 
+  // Helper function to wait and retry profile update
+  const updateProfileWithRetry = async (
+    userId: string, 
+    updates: { job_title?: string | null; department?: string | null; shift_id?: string | null },
+    maxRetries = 3,
+    delayMs = 500
+  ): Promise<boolean> => {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      // Wait before attempting (give trigger time to create profile)
+      await new Promise(resolve => setTimeout(resolve, delayMs * (attempt + 1)));
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('user_id', userId);
+      
+      if (!error) return true;
+      
+      console.log(`Profile update attempt ${attempt + 1} failed, retrying...`);
+    }
+    return false;
+  };
+
   // Create user handler
   const handleCreateUser = async () => {
     if (!newEmail || !newPassword || !newFullName) {
@@ -236,19 +259,17 @@ const AdminEmployees = () => {
       if (error) throw error;
       if (data.error) throw new Error(data.error);
 
-      // Update additional fields if provided
+      // Update additional fields if provided (with retry to handle race condition)
       if (newJobTitle || newDepartment || newShiftId) {
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update({
-            job_title: newJobTitle || null,
-            department: newDepartment || null,
-            shift_id: newShiftId || null,
-          })
-          .eq('user_id', data.user.id);
+        const updateSuccess = await updateProfileWithRetry(data.user.id, {
+          job_title: newJobTitle || null,
+          department: newDepartment || null,
+          shift_id: newShiftId || null,
+        });
 
-        if (updateError) {
-          console.error('Failed to update additional fields:', updateError);
+        if (!updateSuccess) {
+          console.error('Failed to update additional fields after retries');
+          toast.warning('User dibuat, tapi data tambahan gagal disimpan. Silakan edit manual.');
         }
       }
 

@@ -77,7 +77,7 @@ const Dashboard = () => {
   const [pendingRecordType, setPendingRecordType] = useState<'clock_in' | 'clock_out' | null>(null);
 
   // Fetch user profile with geofence settings
-  const { data: profile } = useQuery({
+  const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile', user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
@@ -417,15 +417,32 @@ const Dashboard = () => {
   const canClockIn = currentPosition !== null && status !== 'clocked_in' && geofenceCheck();
   const canClockOut = currentPosition !== null && status === 'clocked_in' && geofenceCheck();
 
-  // Show orphan user message if no company assigned
+  // Show loading state while profile is being fetched
+  if (profileLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="container mx-auto max-w-2xl px-4 py-6">
+          <div className="flex items-center justify-center h-64">
+            <div className="flex flex-col items-center gap-4">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+              <p className="text-muted-foreground">Memuat profil...</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Show orphan user message if no company assigned (only after profile is loaded)
   if (profile && !profile.company_id) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
         <main className="container mx-auto max-w-2xl px-4 py-6">
-          <Card className="border-2 border-warning">
+          <Card className="border-2 border-destructive">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-warning">
+              <CardTitle className="flex items-center gap-2 text-destructive">
                 <AlertTriangle className="h-5 w-5" />
                 Belum Terdaftar di Perusahaan
               </CardTitle>
